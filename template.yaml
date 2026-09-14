@@ -1,0 +1,77 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+# The first release that keeps a volume's data across deploys.
+minCubeship: "0.7.0"
+project: immich
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where Immich answers
+  - key: dbPassword
+    type: secret
+    label: The password Immich uses for its database
+    generate: 32
+
+databases:
+  - key: redis
+    name: immich-redis
+    engine: redis
+    version: "7.4"
+
+apps:
+  - key: database
+    name: postgres
+    # Immich's own Postgres, with the VectorChord extension the managed one
+    # lacks. The Dockerfile adds one setting for the shared memory Cubeship
+    # cannot size.
+    repo: https://github.com/cubeshipd/cubeship-immich-template
+    ref: v1.0.0
+    build: dockerfile
+    dockerfile: database/Dockerfile
+    port: 5432
+    # No health: Postgres speaks no HTTP.
+    # No domain: only Immich talks to it.
+    volumes:
+      - path: /var/lib/postgresql/data
+    limits: { cpu: 1, memory: 2Gi }
+    env:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${input.dbPassword}
+      POSTGRES_DB: immich
+      POSTGRES_INITDB_ARGS: --data-checksums
+
+  - key: ml
+    name: machine-learning
+    image: ghcr.io/immich-app/immich-machine-learning
+    tag: v3.2.0
+    port: 3003
+    health: /ping
+    # The models it downloads on first use.
+    volumes:
+      - path: /cache
+    limits: { cpu: 2, memory: 2Gi }
+
+  - key: server
+    name: immich
+    image: ghcr.io/immich-app/immich-server
+    tag: v3.2.0
+    port: 2283
+    health: /api/server/ping
+    domains:
+      - host: ${input.domain}
+    volumes:
+      - path: /data
+    limits: { cpu: 2, memory: 2Gi }
+    env:
+      DB_HOSTNAME: ${app.database.internal}
+      DB_PORT: ${app.database.port}
+      DB_USERNAME: postgres
+      DB_PASSWORD: ${input.dbPassword}
+      DB_DATABASE_NAME: immich
+      # Not attached: Immich reads REDIS_HOSTNAME, and an attachment writes
+      # REDIS_HOST.
+      REDIS_HOSTNAME: ${db.redis.host}
+      REDIS_PORT: ${db.redis.port}
+      REDIS_PASSWORD: ${db.redis.password}
+      IMMICH_MACHINE_LEARNING_URL: http://${app.ml.internal}:${app.ml.port}
