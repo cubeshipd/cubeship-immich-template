@@ -15,46 +15,37 @@ on a Cubeship instance.
   search, face detection and recognition, and text in images. It has no
   domain, listens on port `3003` inside the instance, and keeps the models it
   downloads in a volume at `/cache`.
-- **postgres** — Immich's own Postgres 14 with VectorChord, built from
-  [`database/Dockerfile`](database/Dockerfile). It has no domain, listens on
-  port `5432` inside the instance, and keeps its data in a volume at
-  `/var/lib/postgresql/data`.
+- **immich-db** — a managed Postgres 17 with the `pgvector` and `vectorchord`
+  extensions, where Immich keeps everything but the files themselves.
 - **immich-redis** — a managed Redis 7.4, where Immich queues its jobs.
 
-They are deployed in that order: the database, then machine learning, then the
-server.
+Machine learning is deployed first, then the server.
 
-It needs Cubeship 0.7.0 or newer, and **an admin to install it**: the database
-is built on the instance, and only admins build.
+It needs Cubeship 0.9.0 or newer, and **an admin to install it**: creating a
+managed database is an admin's.
 
-## Why the database is its own app, and built
+## The database
 
-Immich stores its search and face embeddings with the VectorChord extension.
-The managed Postgres is the plain `postgres` image, which does not have it, so
-the template runs the image Immich's own
-[compose file](https://github.com/immich-app/immich/releases/download/v3.2.0/docker-compose.yml)
-runs, `ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0`, as an
-app with a volume. As its own container, Postgres makes Immich's user a
-superuser, which Immich expects.
+Immich stores its search and face embeddings as `pgvector` columns and indexes
+them with VectorChord. Both are extensions Cubeship can create a managed
+Postgres with, so there is no database container to build here and no volume to
+back up separately — it is a database the instance runs, backs up and charts
+like any other.
 
-Compose starts that container with 128 MB of shared memory. Cubeship cannot
-size it, and Docker's default of 64 MB is too little for the large queries a
-phone's first full sync runs; Postgres then fails them with `could not resize
-shared memory segment`. The Dockerfile adds
-[one setting](database/postgresql.override.conf), through a file the image's
-configuration already includes: Postgres takes that memory from System V
-shared memory, which that limit does not cover.
-
-The image refuses to start when its data is not on a local Linux filesystem
-(ext4, xfs, btrfs or zfs). A volume is a directory on the server's own disk,
-which on a VPS is one of those.
+That is a change from earlier releases of this template, which ran Immich's own
+Postgres image as an app. **An existing installation is not migrated.** Its
+`postgres` app and the volume under it stay exactly where they are; moving to
+the managed database means installing this template fresh and moving the data
+across with `pg_dump` and `psql`.
 
 ## What you are asked
 
 | Input | What to give |
 | --- | --- |
 | Where Immich answers | A domain you control, pointed at your instance. The phone apps connect to it. |
-| The password Immich uses for its database | Nothing — the instance generates it. |
+
+The database password is not asked for: the instance generates one and hands it
+to Immich. Read it from the database's page if you ever need it.
 
 ## After installing
 
@@ -82,11 +73,10 @@ docker exec -it $(docker ps -qf name=cubeship-immich-production-immich) \
   immich-admin reset-admin-password
 ```
 
-or to open the database:
+or to open the database, which is a container of its own:
 
 ```bash
-docker exec -it $(docker ps -qf name=cubeship-immich-production-postgres) \
-  psql -U postgres immich
+docker exec -it cubeship-db-immich-db psql -U cubeship immich
 ```
 
 The internal names follow the project, environment and app names you install
@@ -94,17 +84,18 @@ with; they are on each app's page in the dashboard.
 
 ## The volumes
 
-Each of the three apps runs as one copy on the machine its volume is on, and a
-deploy stops it for a few seconds. While the database or the server is
-stopped, the web app and the phone apps cannot reach Immich.
+Each of the two apps runs as one copy on the machine its volume is on, and a
+deploy stops it for a few seconds. While the server is stopped, the web app and
+the phone apps cannot reach Immich.
 
 **Uploads are the whole library.** The `/data` volume holds every original
 photo and video, plus thumbnails and transcoded videos, which add 10–20% on
 top. Size the server's disk for it.
 
-Back up both the database volume and `/data`: the database holds the albums,
-people, faces and which file is which asset, and restoring one without the
-other loses that match. A volume backup stops the app for the whole copy, and
+Back up both the database and `/data`: the database holds the albums, people,
+faces and which file is which asset, and restoring one without the other loses
+that match. The database is backed up from its own page, with a schedule; a
+volume backup stops the app for the whole copy, and
 copies every file to an S3 store outside the instance — for a large library,
 schedule it for when nobody is uploading, and expect it to take as long as
 copying the library does. The `/cache` volume holds only models, which machine
@@ -116,8 +107,8 @@ and keeps the last 14 (Administration → Settings → Backup), so a backup of
 
 ## Resources
 
-The server, machine learning and the database are each limited to 2 GiB of
-memory; the server and machine learning to 2 CPUs, the database to 1. Immich
+The server and machine learning are each limited to 2 GiB of memory and 2 CPUs.
+The database has no ceiling until you set one on its page. Immich
 asks for at least 6 GB of memory and 2 cores for the whole stack, and
 recommends 8 GB and 4 cores: a VPS with 8 GB is the smallest to install this
 on. Machine learning unloads a model after five minutes unused, and raising
@@ -127,8 +118,10 @@ its `limits` is what helps a large first import.
 
 Change both `tag`s in `template.yaml` to the new release. Immich migrates its
 database when the server starts, and there is no going back: back up the
-database volume and `/data` first, and read the
-[release notes](https://github.com/immich-app/immich/releases). Move the
-database image in `database/Dockerfile` only to the one that release's
-`docker-compose.yml` names, then release this repository and point the
-`postgres` app's `ref` at the new release.
+database and `/data` first, and read the
+[release notes](https://github.com/immich-app/immich/releases).
+
+A database's extensions are chosen when it is created, so a release of this
+template that needed a different one would not change a database that already
+exists. Cubeship says so in the update preview, and an extension can be
+installed from the database's own page.
