@@ -125,3 +125,15 @@ A database's extensions are chosen when it is created, so a release of this
 template that needed a different one would not change a database that already
 exists. Cubeship says so in the update preview, and an extension can be
 installed from the database's own page.
+
+---
+
+<!-- cubeship-crosslink -->
+
+## About Cubeship
+
+This is a template for [**Cubeship**](https://github.com/cubeshipd/cubeship) —
+a PaaS you run on your own server: `docker push`, and it is live, with HTTPS,
+a database beside it, and a second machine when one stops being enough.
+
+Browse every template at [cubeship.dev/templates](https://cubeship.dev/templates).
