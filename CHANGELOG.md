@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/cubeshipd/cubeship-immich-template/compare/v2.0.0...v2.0.1) (2026-09-17)
+
+
+### Bug Fixes
+
+* cut a release when the upstream app updates ([7fa26f9](https://github.com/cubeshipd/cubeship-immich-template/commit/7fa26f92102e0745f5eede8c991dad35b296b2de))
+
 ## [2.0.0](https://github.com/cubeshipd/cubeship-immich-template/compare/v1.0.0...v2.0.0) (2026-09-15)
 
 
